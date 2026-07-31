@@ -1,6 +1,7 @@
 \documentclass[conference]{IEEEtran}
 \usepackage{amsmath, amssymb}
 \usepackage{graphicx}
+\usepackage{circuitikz}
 
 \title{Time-domain Simulation of Battery Warburg Impedance via RC-Ladder Approximation}
 
@@ -35,7 +36,7 @@
 \maketitle
 
 \begin{abstract}
-The Warburg impedance in the frequency domain models the low-frequency diffusion behavior of a lithium-ion battery, but its fractional order gives it no exact finite-dimensional time-domain realization, and no consensus exists on which finite-order approximation and time-domain integration scheme best suits real-time battery simulation. This paper fits an $N$-branch RC ladder network to the ideal Warburg impedance via nonlinear least squares, selects the ladder order using RMSE and the Bayesian Information Criterion, and compares three time-domain integration schemes -- exact zero-order-hold, forward Euler, and an interpolated fourth-order Runge--Kutta method -- for simulating the resulting network under arbitrary current excitation.
+The Warburg impedance in the frequency domain models the low-frequency diffusion behavior of a lithium-ion battery, but its fractional order gives it no exact finite-dimensional time-domain realization, and no consensus exists on which finite-order approximation and time-domain integration scheme best suits real-time battery simulation. This paper fits an $N$-branch RC ladder network to the ideal Warburg impedance via nonlinear least squares, selects the ladder order using RMSE and the Bayesian Information Criterion, and compares three time-domain integration schemes -- zero-order-hold, forward Euler, and an interpolated fourth-order Runge--Kutta method -- for simulating the resulting network under arbitrary current excitation.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -57,7 +58,45 @@ lithium-ion battery, battery management systems, electrochemical impedance spect
 	\end{equation}
 	where $A_W$ is the Warburg coefficient and $\omega$ is the angular frequency. Because $Z_W$ has no finite-order rational form, it cannot be realized as a lumped circuit or driven directly in the time domain. In this paper, we address this constraint by approximating $Z_W$ with an $N$-branch RC ladder network whose parameters are obtained through nonlinear curve fitting against the ideal Warburg response, and we compare three time-domain integration schemes for simulating the resulting network under an arbitrary current.
 
+	\subsection{The Randles Equivalent Circuit}
+	\label{sec:randles}
+
+	Because the Warburg element rarely appears in isolation in practice, it is useful to first place it within the classical Randles equivalent circuit, which is the standard qualitative picture used throughout electrochemical impedance spectroscopy (EIS) and the context in which the rest of this paper's results should be read. Fig.~\ref{fig:randles_nyquist_shell} shows the resulting Nyquist plot for assumed, known values of the non-Warburg elements, comparing it against the fitted $N=4$ RC ladder introduced in Section~\ref{sec:methodology}.
+
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=\linewidth]{../figures/randles_nyquist_shell.pdf}
+		\caption{Randles Nyquist plot using assumed $R_s$, $R_{ct}$, $C_{dl}$ values, comparing the ideal analytic Warburg impedance (color-coded by frequency) to the fitted $N=4$ RC ladder (dashed red) over the 0.1--100~Hz band it was fit on.}
+		\label{fig:randles_nyquist_shell}
+	\end{figure}
+
+	This shape is produced by the circuit shown in Fig.~\ref{fig:randles_circuit}: a series resistance $R_s$, in series with a parallel combination of the double-layer capacitance $C_{dl}$ and a branch containing the charge-transfer resistance $R_{ct}$ in series with the Warburg impedance $Z_W$.
+
+	\begin{figure}[htbp]
+		\centering
+		\resizebox{\linewidth}{!}{%
+		\begin{circuitikz}[scale=0.9, transform shape]
+			\draw (0,0) to[short, -*] (0.5,0)
+			to[R, l=$R_s$] (2.5,0);
+			\draw (2.5,0) to[short] (2.5,1);
+			\draw (2.5,1) to[C, l=$C_{dl}$] (4.5,1);
+			\draw (2.5,0) to[short] (2.5,-1);
+			\draw (2.5,-1) to[R, l=$R_{ct}$] (4,-1);
+			\draw (4,-1) to[generic, l=$Z_W$] (5.5,-1);
+			\draw (4.5,1) to[short] (5.5,1);
+			\draw (5.5,1) to[short] (5.5,-1);
+			\draw (5.5,-1) to[short,-*] (6,-1);
+		\end{circuitikz}}
+		\caption{The Randles equivalent circuit.}
+		\label{fig:randles_circuit}
+	\end{figure}
+
+	Each element represents a distinct physical process inside the cell, and each dominates the measured impedance over a different frequency range, visible as a corresponding feature in Fig.~\ref{fig:randles_nyquist_shell}. $R_s$ is the ohmic (series) resistance of the electrolyte, current collectors, and contacts; having no frequency dependence, it simply shifts the entire spectrum along the real axis and sets the high-frequency intercept. $R_{ct}$ and $C_{dl}$ together represent the charge-transfer kinetics at the electrode-electrolyte interface and the electrical double layer that forms there; in parallel, they produce the semicircle visible in the mid-frequency range. $Z_W$, the Warburg impedance and the focus of this paper, represents solid-state diffusion of lithium ions within the electrode particles, and it is only the dominant contributor to the total impedance at low frequency, appearing as the diagonal tail at the low-frequency end of the spectrum -- at higher frequencies $C_{dl}$ increasingly short-circuits the branch containing it. For the assumed values used in Fig.~\ref{fig:randles_nyquist_shell} ($R_s=1\,\mathrm{m\Omega}$, $R_{ct}=10\,\mathrm{m\Omega}$, $C_{dl}=400\,\mu\mathrm{F}$), $Z_W$ dominates its branch only below approximately $4\,\mathrm{Hz}$, and that branch is increasingly bypassed by $C_{dl}$ above approximately $40\,\mathrm{kHz}$.
+
+	These values are illustrative only, chosen to produce a clearly resolved semicircle and diffusion tail in Fig.~\ref{fig:randles_nyquist_shell} rather than measured from a specific cell; because the crossover frequency scales as $(A_W/R_{ct})^2$, it is highly sensitive to the assumed $R_{ct}$ and is not an intrinsic property of the Warburg element itself. This illustrative crossover is independent of the $0.1$--$100\,\mathrm{Hz}$ band used to fit and validate the RC ladder throughout the remainder of this paper, which treats the Warburg element on its own terms without reference to $R_{ct}$ or $C_{dl}$. This has a direct consequence for the RC-ladder approximation developed in the remainder of this paper: the ladder's accuracy inherently degrades toward the high-frequency edge of the swept band (Fig.~\ref{fig:freq_error}), but since $Z_W$ itself is only physically relevant at low frequency once embedded in a full Randles circuit, this degradation is of limited practical consequence, as discussed further in Section~\ref{sec:hf_discussion}.
+
 	\section{Methodology}
+	\label{sec:methodology}
 
 	\subsection{RC Ladder Network}
 
@@ -84,7 +123,7 @@ lithium-ion battery, battery management systems, electrochemical impedance spect
 
 	\begin{figure}[htbp]
 		\centering
-		\includegraphics[width=\linewidth]{figures/rmse_bic_vs_n.pdf}
+		\includegraphics[width=\linewidth]{../figures/rmse_bic_vs_n.pdf}
 		\caption{RMSE and BIC of the fitted RC ladder as a function of the number of branches $N$. Absolute RMSE improvement per added branch shrinks markedly beyond $N=4$.}
 		\label{fig:rmse_bic}
 	\end{figure}
@@ -113,16 +152,20 @@ lithium-ion battery, battery management systems, electrochemical impedance spect
 
 	\begin{figure}[htbp]
 		\centering
-		\includegraphics[width=\linewidth]{figures/freq_error_n4.pdf}
+		\includegraphics[width=\linewidth]{../figures/freq_error_n4.pdf}
 		\caption{Magnitude error between the ideal Warburg impedance and the fitted $N=4$ RC ladder across the swept frequency band.}
 		\label{fig:freq_error}
 	\end{figure}
+
+	\paragraph{Why the high-frequency error is inconsequential.}
+	\label{sec:hf_discussion}
+	The growing error toward the high-frequency edge of Fig.~\ref{fig:freq_error} is a genuine, structural limitation of a finite-order ladder in isolation: a single RC branch rolls off at $-20\,\mathrm{dB/decade}$ past its own characteristic frequency, whereas the true Warburg impedance rolls off more gently, at $-10\,\mathrm{dB/decade}$ (a consequence of the $\omega^{-0.5}$ power law), so once the excitation frequency exceeds the ladder's fastest fitted time constant it can no longer keep pace. As introduced in Section~\ref{sec:randles}, however, $Z_W$ is only the dominant contributor to a full Randles circuit's impedance below its crossover frequency with $R_{ct}$ ($\approx 4\,\mathrm{Hz}$ for the assumed values in Fig.~\ref{fig:randles_nyquist_shell}) -- comfortably inside the region where the $N=4$ ladder is most accurate. Above that crossover, the double-layer capacitance increasingly bypasses the branch containing $Z_W$ entirely, so the ladder's growing error at the high-frequency edge of the swept band contributes negligibly to the impedance of the complete cell model.
 
 	\subsection{Time-Domain Approximators}
 
 	Given a sampled current $i[k] = i(kT_s)$ at step size $T_s$, we compare three ways of marching \eqref{eq:ode} forward — this is the actual point of comparison in this work, not the ladder topology itself.
 
-	\subsubsection{Approach 1: Exact Zero-Order-Hold (ZOH)}
+	\subsubsection{Approach 1: Zero-Order-Hold (ZOH)}
 	Assuming $i(t)$ held constant at $i[k+1]$ over each interval, \eqref{eq:ode} has a closed-form per-branch solution:
 	\begin{equation}
 		v_n[k+1] = e^{-T_s/\tau_n}\,v_n[k] + R_n\left(1-e^{-T_s/\tau_n}\right) i[k+1].
@@ -173,16 +216,16 @@ lithium-ion battery, battery management systems, electrochemical impedance spect
 
 	\begin{figure}[htbp]
 		\centering
-		\includegraphics[width=\linewidth]{figures/nyquist_plot.pdf}
+		\includegraphics[width=\linewidth]{../figures/nyquist_plot.pdf}
 		\caption{Nyquist plot comparing the three time-domain integrators against the RC-ladder impedance evaluated algebraically from \eqref{eq:Zrc}.}
 		\label{fig:nyquist}
 	\end{figure}
 
-	Figure~\ref{fig:error_spectrum} plots this impedance-extraction error on a log-log scale for all three integrators. The interpolated RK4 scheme (Approach 3) maintains the lowest error across nearly the entire band, staying below roughly $1\%$ through most of the sweep and reaching only about $3\%$ at the top of the band ($100\,\mathrm{Hz}$). The exact ZOH and forward Euler schemes, which both treat the drive current as frozen at a single sample for the whole step, grow past $1\%$ error within the first decade and exceed $20\%$ by $100\,\mathrm{Hz}$, where only ten samples span each drive period. This is consistent with the discretization argument in Section~\ref{sec:extraction}: for the fixed step size $T_s = 1\,\mathrm{ms}$ used here, the dominant source of impedance-extraction error at high frequency is the choice of time-domain integrator rather than the RC-ladder approximation itself, which was already validated separately to sub-percent accuracy over most of the band (Fig.~\ref{fig:freq_error}).
+	Figure~\ref{fig:error_spectrum} plots this impedance-extraction error on a log-log scale for all three integrators. The interpolated RK4 scheme (Approach 3) maintains the lowest error across nearly the entire band, staying below roughly $1\%$ through most of the sweep and reaching only about $3\%$ at the top of the band ($100\,\mathrm{Hz}$). The ZOH and forward Euler schemes, which both treat the drive current as frozen at a single sample for the whole step, grow past $1\%$ error within the first decade and exceed $20\%$ by $100\,\mathrm{Hz}$, where only ten samples span each drive period. This is consistent with the discretization argument in Section~\ref{sec:extraction}: for the fixed step size $T_s = 1\,\mathrm{ms}$ used here, the dominant source of impedance-extraction error at high frequency is the choice of time-domain integrator rather than the RC-ladder approximation itself, which was already validated separately to sub-percent accuracy over most of the band (Fig.~\ref{fig:freq_error}).
 
 	\begin{figure}[htbp]
 		\centering
-		\includegraphics[width=\linewidth]{figures/error_spectrum.pdf}
+		\includegraphics[width=\linewidth]{../figures/error_spectrum.pdf}
 		\caption{Impedance-extraction error (\%) versus frequency for the three time-domain integrators, relative to the algebraic RC-ladder impedance.}
 		\label{fig:error_spectrum}
 	\end{figure}

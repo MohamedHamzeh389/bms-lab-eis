@@ -1,1 +1,6 @@
-.claude/
+# LaTeX build artifacts (regenerated on every compile)
+paper/*.aux
+paper/*.log
+paper/*.synctex.gz
+paper/*.out
+paper/*.toc
